@@ -1,14 +1,14 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::UnorderedMap;
+use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::Promise;
 use near_sdk::{env, near_bindgen};
-
-
+ 
 #[warn(dead_code)]
 fn one_near() -> u128 {
     u128::from_str_radix("1000000000000000000000000", 10).unwrap()
 }
-
+ 
 // smart contract helper method convert string to enum
 fn get_category(category: String) -> Categories {
     if category.eq(&"food".to_owned()) {
@@ -27,7 +27,7 @@ fn get_category(category: String) -> Categories {
         Categories::OTHERS
     }
 }
-
+ 
 // superamket system
 //   the supermaket contains products, the properties of a product are as followes
 //     -> name
@@ -36,10 +36,10 @@ fn get_category(category: String) -> Categories {
 //     -> serial number
 //     -> quantity
 //     -> date_bought
-
-
+ 
 // Categories are  groups into whichh products can be placed
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug)]
+#[serde(crate = "near_sdk::serde")]
 enum Categories {
     FOOD,
     HOUSEHOLD,
@@ -51,9 +51,10 @@ enum Categories {
     TOILETRIES,
     OTHERS,
 }
-
+ 
 #[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug)]
+#[serde(crate = "near_sdk::serde")]
 pub struct Products {
     name: String,
     price: u128,
@@ -61,15 +62,14 @@ pub struct Products {
     quantity: i16,
     date_bought: u64,
 }
-
+ 
 // a map with product_id  => product details {captured above ie price name....}
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Supermaket {
     products: UnorderedMap<u8, Products>,
-    
 }
-
+ 
 impl Default for Supermaket {
     fn default() -> Self {
         Supermaket {
@@ -77,13 +77,13 @@ impl Default for Supermaket {
         }
     }
 }
-
+ 
 #[near_bindgen]
 impl Supermaket {
     // supermaket buys products from wholes / manufacturers
     pub fn buy(&mut self, name: String, price: u128, category: String, quantity: i16, date: u64) {
         let random = env::random_seed();
-
+ 
         let pr = Products {
             name: name,
             price: price,
@@ -91,25 +91,25 @@ impl Supermaket {
             quantity: quantity,
             date_bought: date,
         };
-
+ 
         self.products.insert(&random[0], &pr);
     }
-
+ 
     #[payable]
     pub fn sell(&mut self, product_id: u8, quantity: i16) -> String {
         let current_user = env::signer_account_id();
         let deposit = env::attached_deposit();
-
+ 
         let product = self.products.get(&product_id);
-
+ 
         match product {
             Some(pr) => {
                 let total_cost = pr.price * quantity as u128;
-
+ 
                 assert!(deposit >= total_cost, "attached deposit not enough");
-
+ 
                 Promise::new(current_user).transfer(total_cost);
-
+ 
                 "ok".to_string()
             }
             None => {
@@ -117,26 +117,30 @@ impl Supermaket {
             }
         }
     }
-
-    // pub fn get_product(&self) -> &near_sdk::collections::Vector<Products> {
-    //     self.products.values_as_vector()
-    // }
+ 
+    pub fn get_products(&self) -> std::vec::Vec<Products> {
+        self.products.values_as_vector().to_vec()
+    }
+ 
+    pub fn get_product(&self, id: u8) -> Option<Products> {
+        self.products.get(&id)
+    }
 }
-
+ 
 /*
  * the rest of this file sets up unit tests
  * to run these, the command will be:
  * cargo test --package rust-template -- --nocapture
  * Note: 'rust-template' comes from Cargo.toml's 'name' key
  */
-
+ 
 // use the attribute below for unit tests
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::test_utils::{ VMContextBuilder};
+    use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{testing_env, AccountId};
-
+ 
     // part of writing unit tests is setting up a mock context
     // provide a `predecessor` here, it'll modify the default context
     fn get_context(predecessor: AccountId) -> VMContextBuilder {
@@ -144,7 +148,7 @@ mod tests {
         builder.predecessor_account_id(predecessor);
         builder
     }
-
+ 
     // TESTS HERE
     #[test]
     pub fn buy() {
@@ -156,19 +160,19 @@ mod tests {
             5,
             env::block_timestamp(),
         );
-
+ 
         assert_eq!(app.products.len(), 1)
     }
-
+ 
     #[test]
     pub fn sell() {
         let user = AccountId::new_unchecked("tevin.testnet".to_string());
         let mut _context = get_context(user.clone());
         let bal = one_near() * 10;
-    _context.attached_deposit(bal);
+        _context.attached_deposit(bal);
         _context.account_balance(bal);
         testing_env!(_context.build());
-
+ 
         let mut app = Supermaket::default();
         app.buy(
             "tissue".to_string(),
@@ -176,13 +180,13 @@ mod tests {
             "toileteries".to_string(),
             5,
             env::block_timestamp(),
-        );        
+        );
         assert_eq!(app.products.len(), 1);
-
-        let tmp= app.products.keys_as_vector().get(0);
-
+ 
+        let tmp = app.products.keys_as_vector().get(0);
+ 
         let result = app.sell(tmp.unwrap(), 1);
-
+ 
         assert_eq!("ok".to_string(), result)
     }
 }
